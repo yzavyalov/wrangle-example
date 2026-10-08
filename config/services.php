@@ -35,4 +35,8 @@ return [
         ],
     ],
 
+    'wrangle' => [
+        'webhook_secret' => env('WRANGLE_WEBHOOK_SECRET'),
+    ],
+
 ];
