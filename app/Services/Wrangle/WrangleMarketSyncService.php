@@ -4,7 +4,6 @@ namespace App\Services\Wrangle;
 
 use App\Models\Category;
 use App\Models\Country;
-use App\Models\CountryGroup;
 use App\Models\Market;
 use App\Models\MarketOutcome;
 use Illuminate\Support\Facades\DB;
@@ -39,7 +38,6 @@ class WrangleMarketSyncService
             $this->syncSources($market, $data);
             $this->syncCategories($market, $data);
             $this->syncCountries($market, $data);
-            $this->syncCountryGroups($market, $data);
 
             match ($event) {
                 'market.published' => null,
@@ -54,7 +52,6 @@ class WrangleMarketSyncService
                 'sources',
                 'categories',
                 'countries',
-                'countryGroups',
                 'winningOutcome',
             ]);
         });
@@ -184,15 +181,16 @@ class WrangleMarketSyncService
         $ids = [];
 
         foreach ($data['countries'] ?? [] as $item) {
-            if (! isset($item['id'])) {
+            $code = strtoupper(trim((string) ($item['code'] ?? '')));
+
+            if ($code === '') {
                 continue;
             }
 
             $country = Country::query()->updateOrCreate(
-                ['wrangle_country_id' => $item['id']],
+                ['code' => $code],
                 [
-                    'code' => $item['code'] ?? null,
-                    'name' => $item['name'] ?? '',
+                    'name' => $item['name'] ?? $code,
                 ]
             );
 
@@ -200,29 +198,6 @@ class WrangleMarketSyncService
         }
 
         $market->countries()->sync($ids);
-    }
-
-    private function syncCountryGroups(Market $market, array $data): void
-    {
-        $ids = [];
-
-        foreach ($data['country_groups'] ?? [] as $item) {
-            if (! isset($item['id'])) {
-                continue;
-            }
-
-            $group = CountryGroup::query()->updateOrCreate(
-                ['wrangle_country_group_id' => $item['id']],
-                [
-                    'name' => $item['name'] ?? '',
-                    'slug' => $item['slug'] ?? null,
-                ]
-            );
-
-            $ids[] = $group->id;
-        }
-
-        $market->countryGroups()->sync($ids);
     }
 
     private function resolving(Market $market): void

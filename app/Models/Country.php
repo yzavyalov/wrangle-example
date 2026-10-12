@@ -8,7 +8,6 @@ use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 class Country extends Model
 {
     protected $fillable = [
-        'wrangle_country_id',
         'code',
         'name',
     ];
