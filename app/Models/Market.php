@@ -14,6 +14,7 @@ class Market extends Model
         'wrangle_market_id',
         'status',
         'source_locale',
+        'image_url',
         'finish_at',
         'published_at',
         'resolved_at',

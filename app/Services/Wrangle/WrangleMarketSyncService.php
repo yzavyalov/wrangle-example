@@ -31,7 +31,10 @@ class WrangleMarketSyncService
         }
 
         return DB::transaction(function () use ($event, $data) {
-            $market = $this->syncMarket($data);
+            $market = $this->syncMarket(
+                $data,
+                $event === 'market.published'
+            );
 
             $this->syncTranslations($market, $data);
             $this->syncOutcomes($market, $data);
@@ -57,8 +60,10 @@ class WrangleMarketSyncService
         });
     }
 
-    private function syncMarket(array $data): Market
-    {
+    private function syncMarket(
+        array $data,
+        bool $syncImage = false
+    ): Market {
         if (! isset($data['id'])) {
             throw new RuntimeException('Market ID is missing.');
         }
@@ -71,14 +76,27 @@ class WrangleMarketSyncService
             $market->public_id = (string) Str::ulid();
         }
 
-        $market->fill([
+        $attributes = [
             'status' => $data['status'] ?? 'published',
             'source_locale' => $data['source_locale'] ?? null,
             'finish_at' => $data['finish_at'] ?? null,
             'published_at' => $data['published_at'] ?? null,
             'resolved_at' => $data['resolved_at'] ?? null,
-        ]);
+        ];
 
+        /*
+         * The image belongs to the initial market delivery.
+         *
+         * Lifecycle callbacks do not contain image_url and therefore
+         * must never clear an image already stored by the merchant.
+         */
+        if ($syncImage) {
+            $attributes['image_url'] = filled($data['image_url'] ?? null)
+                ? trim((string) $data['image_url'])
+                : null;
+        }
+
+        $market->fill($attributes);
         $market->save();
 
         return $market;
