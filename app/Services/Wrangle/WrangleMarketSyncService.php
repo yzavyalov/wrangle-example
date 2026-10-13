@@ -249,6 +249,8 @@ class WrangleMarketSyncService
             'is_winner' => false,
         ]);
 
+        $winner->refresh();
+
         $winner->update([
             'is_winner' => true,
         ]);
