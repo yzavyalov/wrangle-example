@@ -27,12 +27,15 @@ class WrangleWebhookController extends Controller
         $marketId = $payload['market']['id'] ?? null;
 
         /*
-         * market_url receives only the initial publication.
+         * market_url receives the initial publication
+         * and subsequent full market data updates.
+         *
          * callback_url receives lifecycle updates.
          */
         $allowedEvents = match ($request->route()?->getName()) {
             'webhooks.wrangle.market' => [
                 'market.published',
+                'market.updated',
             ],
 
             'webhooks.wrangle.callback' => [
