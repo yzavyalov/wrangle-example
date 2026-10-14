@@ -213,7 +213,7 @@ new class extends Component
             .number_format($amount, 2)
             .' on '
             .$outcomeTitle
-            .' вЂ” '
+            .' - '
             .$marketTitle.'.';
     }
 
@@ -418,16 +418,17 @@ new class extends Component
     </header>
 
     <main class="mx-auto max-w-[1500px] px-5 py-8 lg:px-8">
-        <section class="relative mb-8 overflow-hidden rounded-3xl border border-blue-900/30 bg-gradient-to-br from-[#143458] via-[#102a46] to-[#0b1d31] px-7 py-10 lg:px-10">
-            <div class="pointer-events-none absolute -right-32 -top-48 h-[500px] w-[500px] rounded-full bg-blue-600/10 blur-3xl"></div>
-            <div class="pointer-events-none absolute -bottom-32 left-1/3 h-[350px] w-[350px] rounded-full bg-cyan-500/5 blur-3xl"></div>
-
-            <div class="relative max-w-3xl">
-                <p class="mb-2 text-sm font-semibold uppercase tracking-[0.22em] text-blue-400">Prediction markets</p>
-                <h1 class="text-4xl font-black tracking-tight text-white md:text-5xl">Predict the future.</h1>
-                <h2 class="mt-2 text-3xl font-black tracking-tight text-blue-500 md:text-4xl">Live markets. Real outcomes.</h2>
-                <p class="mt-5 max-w-2xl text-base leading-7 text-slate-400">
-                    Explore real-world prediction markets, place virtual bets and see how accurate your predictions are.
+        <section
+            class="relative mb-8 overflow-hidden rounded-3xl border border-blue-900/30 bg-[#081a2e] bg-cover bg-right bg-no-repeat px-7 py-10 lg:px-10"
+            style="background-image: linear-gradient(90deg, rgba(6, 22, 39, .98) 0%, rgba(6, 22, 39, .88) 38%, rgba(6, 22, 39, .28) 72%, rgba(6, 22, 39, .08) 100%), url('{{ asset('images/wrangle-earth-hero.png') }}');"
+        >
+            <div class="relative max-w-3xl py-3 md:py-7">
+                <p class="mb-3 text-sm font-semibold uppercase tracking-[0.22em] text-blue-300">Global prediction markets</p>
+                <h1 class="text-4xl font-black tracking-tight text-white md:text-6xl">
+                    Wrangle <span class="text-blue-500">Markets</span>
+                </h1>
+                <p class="mt-4 text-lg text-slate-300 md:text-xl">
+                    Real events. Real questions. Global coverage.
                 </p>
             </div>
         </section>
@@ -435,10 +436,10 @@ new class extends Component
         @if ($betSuccessMessage)
             <div class="mb-6 flex items-start justify-between gap-4 rounded-2xl border border-emerald-500/30 bg-emerald-500/10 px-5 py-4 text-sm text-emerald-200">
                 <div>
-                    <span class="mr-2 font-black text-emerald-400">вњ“</span>
+                    <span class="mr-2 font-black text-emerald-400">&#10003;</span>
                     {{ $betSuccessMessage }}
                 </div>
-                <button type="button" wire:click="$set('betSuccessMessage', null)" class="text-lg leading-none text-emerald-300 transition hover:text-white">Г—</button>
+                <button type="button" wire:click="$set('betSuccessMessage', null)" class="text-lg leading-none text-emerald-300 transition hover:text-white">&times;</button>
             </div>
         @endif
 
@@ -658,7 +659,7 @@ new class extends Component
 
                                     @if ($acceptsBets)
                                         <div class="relative border-t border-slate-700/40 px-3 py-2 text-right text-[11px] font-semibold text-blue-400">
-                                            Click to bet в†’
+                                            Click to bet &rarr;
                                         </div>
                                     @elseif ($market->status === 'resolved' && $outcome->is_winner && $profitPerDollar !== null)
                                         <div class="relative border-t border-emerald-500/20 px-3 py-2 text-right text-[11px] font-bold text-emerald-300">
@@ -681,7 +682,7 @@ new class extends Component
                             <div class="text-xs text-slate-500">{{ number_format($this->betCount($market)) }} bets</div>
 
                             <a href="{{ route('markets.show', ['publicId' => $market->public_id]) }}" class="ml-auto rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-blue-500">
-                                {{ $market->status === 'resolved' ? 'View results' : 'View market' }} в†’
+                                {{ $market->status === 'resolved' ? 'View results' : 'View market' }} &rarr;
                             </a>
                         </div>
                     </div>
@@ -717,9 +718,9 @@ new class extends Component
         @if ($this->markets->hasPages())
             <div class="mt-10 flex flex-wrap items-center justify-center gap-2">
                 @if ($this->markets->onFirstPage())
-                    <span class="flex h-10 min-w-10 items-center justify-center rounded-xl border border-slate-800 bg-slate-900/40 px-3 text-sm text-slate-600">в†ђ</span>
+                    <span class="flex h-10 min-w-10 items-center justify-center rounded-xl border border-slate-800 bg-slate-900/40 px-3 text-sm text-slate-600">&larr;</span>
                 @else
-                    <button type="button" wire:click="previousPage" class="flex h-10 min-w-10 items-center justify-center rounded-xl border border-slate-700 bg-slate-900 px-3 text-sm text-slate-300 transition hover:border-blue-500 hover:text-white">в†ђ</button>
+                    <button type="button" wire:click="previousPage" class="flex h-10 min-w-10 items-center justify-center rounded-xl border border-slate-700 bg-slate-900 px-3 text-sm text-slate-300 transition hover:border-blue-500 hover:text-white">&larr;</button>
                 @endif
 
                 @php
@@ -746,7 +747,7 @@ new class extends Component
 
                 @foreach ($pages as $pageNumber)
                     @if ($previousRenderedPage !== null && $pageNumber > $previousRenderedPage + 1)
-                        <span class="px-1 text-slate-500">вЂ¦</span>
+                        <span class="px-1 text-slate-500">&hellip;</span>
                     @endif
 
                     @if ($pageNumber === $current)
@@ -763,9 +764,9 @@ new class extends Component
                 @endforeach
 
                 @if ($this->markets->hasMorePages())
-                    <button type="button" wire:click="nextPage" class="flex h-10 min-w-10 items-center justify-center rounded-xl border border-slate-700 bg-slate-900 px-3 text-sm text-slate-300 transition hover:border-blue-500 hover:text-white">в†’</button>
+                    <button type="button" wire:click="nextPage" class="flex h-10 min-w-10 items-center justify-center rounded-xl border border-slate-700 bg-slate-900 px-3 text-sm text-slate-300 transition hover:border-blue-500 hover:text-white">&rarr;</button>
                 @else
-                    <span class="flex h-10 min-w-10 items-center justify-center rounded-xl border border-slate-800 bg-slate-900/40 px-3 text-sm text-slate-600">в†’</span>
+                    <span class="flex h-10 min-w-10 items-center justify-center rounded-xl border border-slate-800 bg-slate-900/40 px-3 text-sm text-slate-600">&rarr;</span>
                 @endif
             </div>
         @endif
@@ -788,7 +789,7 @@ new class extends Component
                         </div>
 
                         <button type="button" wire:click="closeBetModal" class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-slate-700 bg-slate-900/70 text-xl text-slate-400 transition hover:border-slate-500 hover:text-white" aria-label="Close">
-                            Г—
+                            &times;
                         </button>
                     </div>
                 </div>
