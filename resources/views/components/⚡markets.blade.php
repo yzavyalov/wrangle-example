@@ -38,6 +38,12 @@ new class extends Component
 
     public string $locale = 'en';
 
+    public string $search = '';
+
+    public int $visibleMarkets = self::PAGE_SIZE;
+
+    public bool $hasMoreMarkets = false;
+
     /*
      * Bet modal state.
      *
@@ -145,6 +151,22 @@ new class extends Component
                 }
             )
 
+            ->when(
+                trim($this->search) !== '',
+                function ($query) use ($locale) {
+                    $term = '%'.trim($this->search).'%';
+
+                    $query->whereHas('translations', function ($translationQuery) use ($locale, $term) {
+                        $translationQuery
+                            ->whereIn('locale', array_unique([$locale, 'en']))
+                            ->where(function ($textQuery) use ($term) {
+                                $textQuery->where('title', 'like', $term)
+                                    ->orWhere('description', 'like', $term);
+                            });
+                    });
+                }
+            )
+
             ->with([
                 'translations' => function ($query) use ($locale) {
                     $query->whereIn(
@@ -204,8 +226,13 @@ new class extends Component
                     ->orderByDesc('published_at')
             )
 
-            ->limit(self::PAGE_SIZE)
-            ->get();
+            ->limit($this->visibleMarkets + 1)
+            ->get()
+            ->pipe(function (Collection $markets) {
+                $this->hasMoreMarkets = $markets->count() > $this->visibleMarkets;
+
+                return $markets->take($this->visibleMarkets)->values();
+            });
     }
 
     private function validCategory(): string
@@ -284,12 +311,47 @@ new class extends Component
             : 'en';
     }
 
+    public function updatedSearch(): void
+    {
+        $this->resetMarketWindow();
+    }
+
+    public function updatedCountry(): void
+    {
+        $this->resetMarketWindow();
+    }
+
+    public function updatedSort(): void
+    {
+        $this->resetMarketWindow();
+    }
+
+    public function updatedLocale(): void
+    {
+        $this->locale = $this->validLocale();
+        $this->resetMarketWindow();
+    }
+
+    public function loadMore(): void
+    {
+        if ($this->hasMoreMarkets) {
+            $this->visibleMarkets += self::PAGE_SIZE;
+        }
+    }
+
+    private function resetMarketWindow(): void
+    {
+        $this->visibleMarkets = self::PAGE_SIZE;
+        $this->hasMoreMarkets = false;
+    }
+
     public function selectCategory(string $slug = ''): void
     {
         $slug = trim($slug);
 
         if ($slug === '') {
             $this->category = '';
+            $this->resetMarketWindow();
 
             return;
         }
@@ -307,6 +369,8 @@ new class extends Component
         $this->category = $exists
             ? $slug
             : '';
+
+        $this->resetMarketWindow();
     }
 
     public function selectCountry(string $code = ''): void
@@ -340,6 +404,8 @@ new class extends Component
     {
         $this->category = '';
         $this->country = '';
+        $this->search = '';
+        $this->resetMarketWindow();
     }
 
     /**
@@ -489,7 +555,7 @@ new class extends Component
             .number_format($amount, 2)
             .' on '
             .$outcomeTitle
-            .' — '
+            .' вЂ” '
             .$marketTitle.'.';
     }
 
@@ -758,12 +824,16 @@ new class extends Component
 };
 ?>
 
-<div class="min-h-screen bg-[#06111f] text-white">
+<div
+    x-data="{ theme: localStorage.getItem('wrangle-theme') || 'dark', toggleTheme() { this.theme = this.theme === 'dark' ? 'light' : 'dark'; localStorage.setItem('wrangle-theme', this.theme); } }"
+    :class="theme === 'light' ? 'bg-[#f5f8fc] text-[#10233f]' : 'bg-[#0b1d31] text-white'"
+    class="min-h-screen transition-colors duration-300"
+>
 
     {{-- =========================================================
          HEADER
     ========================================================== --}}
-    <header class="border-b border-slate-800/80 bg-[#071321]/95">
+    <header :class="theme === 'light' ? 'border-slate-200 bg-white/95' : 'border-slate-700/80 bg-[#10243b]/95'" class="border-b transition-colors duration-300">
         <div class="mx-auto flex max-w-[1500px] items-center gap-8 px-5 py-4 lg:px-8">
 
             <a href="/" class="flex shrink-0 items-center gap-3">
@@ -800,17 +870,17 @@ new class extends Component
             </nav>
 
             <div class="ml-auto hidden w-full max-w-sm lg:block">
-                <div
-                    class="flex items-center gap-3 rounded-xl border border-slate-700/80 bg-slate-900/60 px-4 py-3 text-sm text-slate-500"
-                >
-                    <span class="text-lg">
-                        ⌕
+                <label class="relative block">
+                    <span class="pointer-events-none absolute inset-y-0 left-4 flex items-center text-slate-400">
+                        <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                            <circle cx="11" cy="11" r="7"></circle>
+                            <path d="m20 20-3.5-3.5"></path>
+                        </svg>
                     </span>
-
-                    <span>
-                        Search markets...
-                    </span>
-                </div>
+                    <input type="search" wire:model.live.debounce.350ms="search" placeholder="Search markets..."
+                           :class="theme === 'light' ? 'border-slate-300 bg-white text-slate-900 placeholder:text-slate-400' : 'border-slate-600 bg-[#132a45] text-white placeholder:text-slate-400'"
+                           class="w-full rounded-xl border py-3 pl-11 pr-4 text-sm outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-500/15">
+                </label>
             </div>
 
             <select
@@ -830,11 +900,12 @@ new class extends Component
                 <option value="es">ES</option>
             </select>
 
-            <div
-                class="rounded-xl border border-slate-800 bg-slate-900/70 px-4 py-3 text-slate-400"
-            >
-                ◐
-            </div>
+            <button type="button" x-on:click="toggleTheme()"
+                    :title="theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'"
+                    :class="theme === 'light' ? 'border-slate-300 bg-white text-slate-700 hover:bg-slate-100' : 'border-slate-600 bg-[#132a45] text-slate-200 hover:bg-[#193653]'"
+                    class="flex h-[50px] w-[54px] items-center justify-center rounded-xl border transition">
+                <span x-show="theme === 'dark'">вЂ</span><span x-show="theme === 'light'" x-cloak>вѕ</span>
+            </button>
 
         </div>
     </header>
@@ -846,7 +917,7 @@ new class extends Component
              HERO
         ====================================================== --}}
         <section
-            class="relative mb-8 overflow-hidden rounded-3xl border border-blue-900/30 bg-gradient-to-br from-[#0a1b31] via-[#071727] to-[#06111f] px-7 py-10 lg:px-10"
+            class="relative mb-8 overflow-hidden rounded-3xl border border-blue-900/30 bg-gradient-to-br from-[#143458] via-[#102a46] to-[#0b1d31] px-7 py-10 lg:px-10"
         >
             <div
                 class="pointer-events-none absolute -right-32 -top-48 h-[500px] w-[500px] rounded-full bg-blue-600/10 blur-3xl"
@@ -863,7 +934,13 @@ new class extends Component
                     Prediction markets
                 </p>
 
-                <h1 class="text-4xl font-black tracking-tight md:text-5xl">
+                <h1
+                    :class="theme === 'light' ? 'text-[#10233f]' : 'text-white'"
+                    :style="theme === 'light'
+                        ? '-webkit-text-stroke: 1px rgba(255,255,255,0.95); paint-order: stroke fill;'
+                        : ''"
+                    class="text-4xl font-black tracking-tight md:text-5xl"
+                >
                     Predict the future.
                 </h1>
 
@@ -894,7 +971,7 @@ new class extends Component
             >
                 <div>
                     <span class="mr-2 font-black text-emerald-400">
-                        ✓
+                        вњ“
                     </span>
 
                     {{ $betSuccessMessage }}
@@ -905,7 +982,7 @@ new class extends Component
                     wire:click="$set('betSuccessMessage', null)"
                     class="text-lg leading-none text-emerald-300 transition hover:text-white"
                 >
-                    ×
+                    Г—
                 </button>
             </div>
 
@@ -916,7 +993,7 @@ new class extends Component
              FILTERS
         ====================================================== --}}
         <section
-            class="mb-7 rounded-2xl border border-slate-800 bg-slate-900/30 p-4"
+            class="mb-7 rounded-2xl border border-slate-700/80 bg-[#10243b]/80 p-4"
         >
             <div class="flex flex-wrap items-center gap-3">
 
@@ -1024,7 +1101,7 @@ new class extends Component
                         "
                     >
                         <option value="en">English</option>
-                        <option value="es">Español</option>
+                        <option value="es">EspaГ±ol</option>
                     </select>
                 </div>
 
@@ -1066,7 +1143,7 @@ new class extends Component
         ====================================================== --}}
         <div
             wire:loading.flex
-            wire:target="selectCategory,country,locale,sort,clearFilters"
+            wire:target="selectCategory,country,locale,sort,search,clearFilters,loadMore"
             class="mb-5 items-center gap-3 rounded-xl border border-blue-900/30 bg-blue-950/20 px-4 py-3 text-sm text-blue-300"
         >
             <div
@@ -1082,7 +1159,7 @@ new class extends Component
         ====================================================== --}}
         <section
             wire:loading.class="opacity-50"
-            wire:target="selectCategory,country,locale,sort,clearFilters"
+            wire:target="selectCategory,country,locale,sort,search,clearFilters,loadMore"
             class="grid grid-cols-1 items-start gap-5 transition-opacity md:grid-cols-2 xl:grid-cols-3"
         >
 
@@ -1118,7 +1195,7 @@ new class extends Component
                     class="
                         overflow-hidden rounded-2xl
                         border border-slate-800
-                        bg-[#0a1929]
+                        bg-[#10243b]
                         shadow-xl shadow-black/10
                         transition duration-200
                         hover:-translate-y-0.5
@@ -1130,7 +1207,7 @@ new class extends Component
 
                     {{-- CARD IMAGE --}}
                     <div
-                        class="relative min-h-44 overflow-hidden border-b border-slate-800 bg-gradient-to-br from-blue-950 via-[#102b4b] to-[#071422] p-4"
+                        class="relative min-h-44 overflow-hidden border-b border-slate-800 bg-gradient-to-br from-blue-900 via-[#17436e] to-[#10243b] p-4"
                     >
 
                         @if ($market->image_url)
@@ -1186,7 +1263,7 @@ new class extends Component
                             <span
                                 class="rounded-lg border border-white/10 bg-black/55 px-3 py-1.5 text-xs font-medium text-slate-100 shadow-sm backdrop-blur-md"
                             >
-                                ◷ {{ $this->timeLeft($market) }}
+                                в—· {{ $this->timeLeft($market) }}
                             </span>
                         </div>
 
@@ -1398,7 +1475,7 @@ new class extends Component
                                         <div
                                             class="relative border-t border-slate-700/40 px-3 py-2 text-right text-[11px] font-semibold text-blue-400"
                                         >
-                                            Click to bet →
+                                            Click to bet в†’
                                         </div>
 
                                     @elseif (
@@ -1466,7 +1543,7 @@ new class extends Component
                                     : 'View market'
                                 }}
 
-                                →
+                                в†’
                             </a>
 
                         </div>
@@ -1488,7 +1565,11 @@ new class extends Component
 
                     <p class="mt-2 text-sm text-slate-400">
 
-                        @if ($category !== '' && $country !== '')
+                        @if (trim($search) !== '')
+
+                            No markets match your search.
+
+                        @elseif ($category !== '' && $country !== '')
 
                             There are currently no markets
                             matching this category and country.
@@ -1512,7 +1593,7 @@ new class extends Component
                     </p>
 
 
-                    @if ($category !== '' || $country !== '')
+                    @if ($category !== '' || $country !== '' || trim($search) !== '')
 
                         <button
                             type="button"
@@ -1540,9 +1621,16 @@ new class extends Component
         </section>
 
 
-        <footer class="py-10 text-center text-xs text-slate-600">
-            Maximum {{ self::PAGE_SIZE }} markets per request
-        </footer>
+        @if ($hasMoreMarkets)
+            <div x-data x-intersect="$wire.loadMore()" wire:key="market-load-more-{{ $visibleMarkets }}" class="flex min-h-24 items-center justify-center py-8">
+                <div wire:loading.flex wire:target="loadMore" class="items-center gap-3 rounded-xl border border-blue-500/20 bg-blue-500/10 px-5 py-3 text-sm text-blue-300">
+                    <div class="h-4 w-4 animate-spin rounded-full border-2 border-blue-400 border-t-transparent"></div>
+                    Loading more markets...
+                </div>
+            </div>
+        @else
+            <footer class="py-10 text-center text-xs text-slate-500">All available markets are loaded</footer>
+        @endif
 
     </main>
 
@@ -1569,7 +1657,7 @@ new class extends Component
 
             {{-- MODAL --}}
             <div
-                class="relative z-10 w-full max-w-lg overflow-hidden rounded-3xl border border-slate-700 bg-[#0a1929] shadow-2xl shadow-black/50"
+                class="relative z-10 w-full max-w-lg overflow-hidden rounded-3xl border border-slate-700 bg-[#10243b] shadow-2xl shadow-black/50"
             >
 
                 <div
@@ -1601,7 +1689,7 @@ new class extends Component
                             "
                             aria-label="Close"
                         >
-                            ×
+                            Г—
                         </button>
 
                     </div>
@@ -1761,3 +1849,4 @@ new class extends Component
     @endif
 
 </div>
+
