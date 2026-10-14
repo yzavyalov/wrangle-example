@@ -26,7 +26,7 @@ new class extends Component
 
     public string $publicId;
 
-    public string $locale = 'en';
+    public string $locale = '';
 
     /*
      * Bet modal state.
@@ -43,24 +43,114 @@ new class extends Component
 
     public ?string $betSuccessMessage = null;
 
+
     /**
      * Make sure the requested market exists and is public.
+     *
+     * The initial language is:
+     * 1. English, if this market has English.
+     * 2. Otherwise the market source locale, if available.
+     * 3. Otherwise the first available translation.
      */
     public function mount(string $publicId): void
     {
         $this->publicId = $publicId;
 
-        abort_unless(
-            Market::query()
-                ->where('public_id', $this->publicId)
-                ->whereIn(
-                    'status',
-                    self::MARKET_STATUSES
-                )
-                ->exists(),
-            404
+        $market = Market::query()
+            ->where('public_id', $this->publicId)
+            ->whereIn(
+                'status',
+                self::MARKET_STATUSES
+            )
+            ->with('translations')
+            ->first();
+
+        abort_unless($market, 404);
+
+        $locales = $market->translations
+            ->pluck('locale')
+            ->filter()
+            ->unique()
+            ->values();
+
+        if ($locales->contains('en')) {
+            $this->locale = 'en';
+
+            return;
+        }
+
+        if (
+            $market->source_locale
+            && $locales->contains($market->source_locale)
+        ) {
+            $this->locale = $market->source_locale;
+
+            return;
+        }
+
+        $this->locale = (string) (
+            $locales->first()
+            ?? $market->source_locale
+            ?? 'en'
         );
     }
+
+
+    /**
+     * Languages actually available for this market.
+     */
+    public function getAvailableLocalesProperty(): array
+    {
+        return Market::query()
+            ->where('public_id', $this->publicId)
+            ->whereIn(
+                'status',
+                self::MARKET_STATUSES
+            )
+            ->firstOrFail()
+            ->translations()
+            ->whereNotNull('locale')
+            ->where('locale', '!=', '')
+            ->distinct()
+            ->orderBy('locale')
+            ->pluck('locale')
+            ->values()
+            ->all();
+    }
+
+
+    /**
+     * Validate selected language against translations
+     * actually available for this market.
+     */
+    private function validLocale(): string
+    {
+        $locales = $this->availableLocales;
+
+        if (
+            $this->locale !== ''
+            && in_array(
+                $this->locale,
+                $locales,
+                true
+            )
+        ) {
+            return $this->locale;
+        }
+
+        if (
+            in_array(
+                'en',
+                $locales,
+                true
+            )
+        ) {
+            return 'en';
+        }
+
+        return $locales[0] ?? 'en';
+    }
+
 
     /**
      * Current market.
@@ -80,12 +170,9 @@ new class extends Component
             )
             ->with([
                 'translations' => function ($query) use ($locale) {
-                    $query->whereIn(
+                    $query->where(
                         'locale',
-                        array_unique([
-                            $locale,
-                            'en',
-                        ])
+                        $locale
                     );
                 },
 
@@ -99,12 +186,9 @@ new class extends Component
                         ->orderBy('id')
                         ->with([
                             'translations' => function ($translationQuery) use ($locale) {
-                                $translationQuery->whereIn(
+                                $translationQuery->where(
                                     'locale',
-                                    array_unique([
-                                        $locale,
-                                        'en',
-                                    ])
+                                    $locale
                                 );
                             },
                         ])
@@ -121,6 +205,7 @@ new class extends Component
             ])
             ->firstOrFail();
     }
+
 
     /**
      * Bets made by the current anonymous visitor
@@ -156,6 +241,8 @@ new class extends Component
             return new Collection();
         }
 
+        $locale = $this->validLocale();
+
         return VirtualBet::query()
             ->where(
                 'market_id',
@@ -166,11 +253,17 @@ new class extends Component
                 $visitorId
             )
             ->with([
-                'outcome.translations',
+                'outcome.translations' => function ($query) use ($locale) {
+                    $query->where(
+                        'locale',
+                        $locale
+                    );
+                },
             ])
             ->orderByDesc('id')
             ->get();
     }
+
 
     /**
      * Count unique visitors who placed bets.
@@ -187,19 +280,6 @@ new class extends Component
             ->count('visitor_id');
     }
 
-    private function validLocale(): string
-    {
-        return in_array(
-            $this->locale,
-            [
-                'en',
-                'es',
-            ],
-            true
-        )
-            ? $this->locale
-            : 'en';
-    }
 
     public function marketTitle(
         Market $market
@@ -212,14 +292,9 @@ new class extends Component
                 $locale
             )
             ?->title
-            ?? $market->translations
-            ->firstWhere(
-                'locale',
-                'en'
-            )
-            ?->title
             ?? 'Untitled market';
     }
+
 
     public function marketDescription(
         Market $market
@@ -231,14 +306,9 @@ new class extends Component
                 'locale',
                 $locale
             )
-            ?->description
-            ?? $market->translations
-                ->firstWhere(
-                    'locale',
-                    'en'
-                )
-                ?->description;
+            ?->description;
     }
+
 
     public function outcomeTitle(
         $outcome
@@ -251,14 +321,9 @@ new class extends Component
                 $locale
             )
             ?->title
-            ?? $outcome->translations
-            ->firstWhere(
-                'locale',
-                'en'
-            )
-            ?->title
             ?? 'Outcome';
     }
+
 
     /**
      * UI check only.
@@ -283,6 +348,7 @@ new class extends Component
         return true;
     }
 
+
     public function marketPool(
         Market $market
     ): float {
@@ -294,6 +360,7 @@ new class extends Component
         );
     }
 
+
     public function outcomePool(
         $outcome
     ): float {
@@ -301,6 +368,7 @@ new class extends Component
             $outcome->bet_pool ?? 0
         );
     }
+
 
     public function outcomePercent(
         Market $market,
@@ -322,6 +390,7 @@ new class extends Component
         );
     }
 
+
     public function betCount(
         Market $market
     ): int {
@@ -329,6 +398,7 @@ new class extends Component
             $market->bets_count ?? 0
         );
     }
+
 
     public function categoryName(
         Market $market
@@ -338,6 +408,7 @@ new class extends Component
             ?->name
             ?? 'Market';
     }
+
 
     /**
      * Profit for every $1 staked on the winner.
@@ -379,6 +450,7 @@ new class extends Component
         return $losingPool / $winningPool;
     }
 
+
     public function statusLabel(
         Market $market
     ): string {
@@ -396,6 +468,7 @@ new class extends Component
             ucfirst($market->status),
         };
     }
+
 
     public function timeLeft(
         Market $market
@@ -460,6 +533,7 @@ new class extends Component
                 $minutes
             ).'m left';
     }
+
 
     /**
      * Open bet modal.
@@ -530,6 +604,7 @@ new class extends Component
         $this->betModalOpen = true;
     }
 
+
     public function closeBetModal(): void
     {
         $this->betModalOpen = false;
@@ -544,6 +619,22 @@ new class extends Component
 
         $this->resetValidation();
     }
+
+
+    /**
+     * If the language is changed while the bet modal
+     * is open, close it so stale translated text
+     * cannot remain in the dialog.
+     */
+    public function updatedLocale(): void
+    {
+        $this->locale = $this->validLocale();
+
+        if ($this->betModalOpen) {
+            $this->closeBetModal();
+        }
+    }
+
 
     /**
      * Validate the Livewire form and delegate
@@ -623,6 +714,7 @@ new class extends Component
             .$marketTitle.'.';
     }
 
+
     /**
      * Anonymous visitor identifier.
      */
@@ -683,25 +775,51 @@ new class extends Component
 
             <div class="ml-auto flex items-center gap-4">
 
-                <select
-                    wire:model.live="locale"
-                    wire:loading.attr="disabled"
-                    class="
-                        rounded-xl
-                        border border-slate-800
-                        bg-slate-900
-                        px-3 py-2.5
-                        text-sm text-slate-200
-                        outline-none
-                        transition
-                        hover:border-slate-700
-                        focus:border-blue-500
-                    "
-                    aria-label="Language"
-                >
-                    <option value="en">EN</option>
-                    <option value="es">ES</option>
-                </select>
+                @if (count($this->availableLocales) > 1)
+
+                    <select
+                        wire:model.live="locale"
+                        wire:loading.attr="disabled"
+                        class="
+                            rounded-xl
+                            border border-slate-800
+                            bg-slate-900
+                            px-3 py-2.5
+                            text-sm text-slate-200
+                            outline-none
+                            transition
+                            hover:border-slate-700
+                            focus:border-blue-500
+                        "
+                        aria-label="Language"
+                    >
+
+                        @foreach ($this->availableLocales as $availableLocale)
+
+                            <option value="{{ $availableLocale }}">
+                                {{ strtoupper($availableLocale) }}
+                            </option>
+
+                        @endforeach
+
+                    </select>
+
+                @elseif (count($this->availableLocales) === 1)
+
+                    <div
+                        class="
+                            rounded-xl
+                            border border-slate-800
+                            bg-slate-900
+                            px-3 py-2.5
+                            text-sm font-semibold
+                            text-slate-400
+                        "
+                    >
+                        {{ strtoupper($this->availableLocales[0]) }}
+                    </div>
+
+                @endif
 
 
                 <a
@@ -794,7 +912,6 @@ new class extends Component
             >
 
                 <div>
-
                     <span
                         class="mr-2 font-black text-emerald-400"
                     >
@@ -802,7 +919,6 @@ new class extends Component
                     </span>
 
                     {{ $betSuccessMessage }}
-
                 </div>
 
 
@@ -861,7 +977,6 @@ new class extends Component
                         onerror="this.style.display='none'"
                     >
 
-
                     <div
                         class="
                             absolute inset-0
@@ -871,7 +986,6 @@ new class extends Component
                             to-[#06111f]/30
                         "
                     ></div>
-
 
                     <div
                         class="
@@ -894,7 +1008,6 @@ new class extends Component
                             blur-3xl
                         "
                     ></div>
-
 
                     <div
                         class="
@@ -1001,9 +1114,7 @@ new class extends Component
             </div>
 
 
-            {{-- =================================================
-                 MARKET STATS
-            ================================================== --}}
+            {{-- MARKET STATS --}}
             <div
                 class="
                     grid grid-cols-2
@@ -1012,13 +1123,7 @@ new class extends Component
                 "
             >
 
-                <div
-                    class="
-                        border-r border-slate-800
-                        p-5
-                    "
-                >
-
+                <div class="border-r border-slate-800 p-5">
                     <div
                         class="
                             text-xs font-semibold
@@ -1029,22 +1134,13 @@ new class extends Component
                         Volume
                     </div>
 
-                    <div
-                        class="mt-1 text-xl font-black text-white"
-                    >
+                    <div class="mt-1 text-xl font-black text-white">
                         ${{ number_format($pool, 2) }}
                     </div>
-
                 </div>
 
 
-                <div
-                    class="
-                        p-5
-                        md:border-r md:border-slate-800
-                    "
-                >
-
+                <div class="p-5 md:border-r md:border-slate-800">
                     <div
                         class="
                             text-xs font-semibold
@@ -1055,14 +1151,11 @@ new class extends Component
                         Bets
                     </div>
 
-                    <div
-                        class="mt-1 text-xl font-black text-white"
-                    >
+                    <div class="mt-1 text-xl font-black text-white">
                         {{ number_format(
                             $this->betCount($market)
                         ) }}
                     </div>
-
                 </div>
 
 
@@ -1074,7 +1167,6 @@ new class extends Component
                         md:border-t-0
                     "
                 >
-
                     <div
                         class="
                             text-xs font-semibold
@@ -1085,24 +1177,15 @@ new class extends Component
                         Traders
                     </div>
 
-                    <div
-                        class="mt-1 text-xl font-black text-white"
-                    >
+                    <div class="mt-1 text-xl font-black text-white">
                         {{ number_format(
                             $this->traderCount($market)
                         ) }}
                     </div>
-
                 </div>
 
 
-                <div
-                    class="
-                        border-t border-slate-800
-                        p-5 md:border-t-0
-                    "
-                >
-
+                <div class="border-t border-slate-800 p-5 md:border-t-0">
                     <div
                         class="
                             text-xs font-semibold
@@ -1113,12 +1196,9 @@ new class extends Component
                         Status
                     </div>
 
-                    <div
-                        class="mt-1 text-xl font-black text-white"
-                    >
+                    <div class="mt-1 text-xl font-black text-white">
                         {{ $this->statusLabel($market) }}
                     </div>
-
                 </div>
 
             </div>
@@ -1126,9 +1206,7 @@ new class extends Component
         </section>
 
 
-        {{-- =====================================================
-             RESOLVING NOTICE
-        ====================================================== --}}
+        {{-- RESOLVING NOTICE --}}
         @if ($market->status === 'resolving')
 
             <section
@@ -1139,7 +1217,6 @@ new class extends Component
                     px-5 py-5
                 "
             >
-
                 <div class="font-bold text-amber-300">
                     Betting is closed
                 </div>
@@ -1153,15 +1230,12 @@ new class extends Component
                     The betting period has ended.
                     Please wait for the final result.
                 </p>
-
             </section>
 
         @endif
 
 
-        {{-- =====================================================
-             RESOLVED NOTICE
-        ====================================================== --}}
+        {{-- RESOLVED NOTICE --}}
         @if ($market->status === 'resolved')
 
             <section
@@ -1176,7 +1250,6 @@ new class extends Component
                 <div class="font-bold text-violet-200">
                     Market resolved
                 </div>
-
 
                 @if ($profitPerDollar !== null)
 
@@ -1232,9 +1305,7 @@ new class extends Component
             "
         >
 
-            {{-- =================================================
-                 OUTCOMES
-            ================================================== --}}
+            {{-- OUTCOMES --}}
             <section
                 class="
                     rounded-2xl
@@ -1256,46 +1327,28 @@ new class extends Component
                         Outcomes
                     </div>
 
-
-                    <h2
-                        class="mt-1 text-2xl font-black"
-                    >
+                    <h2 class="mt-1 text-2xl font-black">
                         Choose an outcome
                     </h2>
 
 
                     @if ($acceptsBets)
 
-                        <p
-                            class="
-                                mt-2 text-sm
-                                text-slate-400
-                            "
-                        >
+                        <p class="mt-2 text-sm text-slate-400">
                             Select an outcome below to place
                             a virtual bet.
                         </p>
 
                     @elseif ($market->status === 'resolving')
 
-                        <p
-                            class="
-                                mt-2 text-sm
-                                text-slate-400
-                            "
-                        >
+                        <p class="mt-2 text-sm text-slate-400">
                             Betting is closed while the
                             result is being determined.
                         </p>
 
                     @else
 
-                        <p
-                            class="
-                                mt-2 text-sm
-                                text-slate-400
-                            "
-                        >
+                        <p class="mt-2 text-sm text-slate-400">
                             Final market results.
                         </p>
 
@@ -1347,7 +1400,7 @@ new class extends Component
                         <button
                             type="button"
 
-                            wire:key="market-outcome-{{ $outcomeIndex }}"
+                            wire:key="market-outcome-{{ $locale }}-{{ $outcomeIndex }}"
 
                             @if ($acceptsBets)
                                 wire:click="openBetModal({{ $outcomeIndex }})"
@@ -1402,12 +1455,7 @@ new class extends Component
 
                                 <div class="min-w-0">
 
-                                    <div
-                                        class="
-                                            flex items-center
-                                            gap-2
-                                        "
-                                    >
+                                    <div class="flex items-center gap-2">
 
                                         <span
                                             class="
@@ -1450,7 +1498,6 @@ new class extends Component
                                             bg-slate-700/80
                                         "
                                     >
-
                                         <div
                                             class="
                                                 h-full rounded-full
@@ -1467,14 +1514,12 @@ new class extends Component
                                                 ) }}%
                                             "
                                         ></div>
-
                                     </div>
 
                                 </div>
 
 
                                 <div class="text-right">
-
                                     <span
                                         class="
                                             text-lg font-black
@@ -1486,7 +1531,6 @@ new class extends Component
                                             1
                                         ) }}%
                                     </span>
-
                                 </div>
 
 
@@ -1496,7 +1540,6 @@ new class extends Component
                                         sm:block
                                     "
                                 >
-
                                     <div
                                         class="
                                             text-sm font-bold
@@ -1509,15 +1552,9 @@ new class extends Component
                                         ) }}
                                     </div>
 
-                                    <div
-                                        class="
-                                            mt-1 text-xs
-                                            text-slate-500
-                                        "
-                                    >
+                                    <div class="mt-1 text-xs text-slate-500">
                                         pool
                                     </div>
-
                                 </div>
 
                             </div>
@@ -1574,15 +1611,10 @@ new class extends Component
             </section>
 
 
-            {{-- =================================================
-                 RIGHT COLUMN
-            ================================================== --}}
+            {{-- RIGHT COLUMN --}}
             <aside class="space-y-6">
 
-
-                {{-- =============================================
-                     MARKET DETAILS
-                ============================================== --}}
+                {{-- MARKET DETAILS --}}
                 <section
                     class="
                         rounded-2xl
@@ -1597,9 +1629,7 @@ new class extends Component
                     </h2>
 
 
-                    <div
-                        class="mt-5 space-y-4 text-sm"
-                    >
+                    <div class="mt-5 space-y-4 text-sm">
 
                         <div
                             class="
@@ -1610,7 +1640,6 @@ new class extends Component
                                 pb-4
                             "
                         >
-
                             <span class="text-slate-500">
                                 Category
                             </span>
@@ -1624,7 +1653,6 @@ new class extends Component
                             >
                                 {{ $this->categoryName($market) }}
                             </span>
-
                         </div>
 
 
@@ -1637,7 +1665,6 @@ new class extends Component
                                 pb-4
                             "
                         >
-
                             <span class="text-slate-500">
                                 Deadline
                             </span>
@@ -1649,7 +1676,6 @@ new class extends Component
                                     text-slate-200
                                 "
                             >
-
                                 @if ($market->finish_at)
 
                                     {{ $market->finish_at->format(
@@ -1657,13 +1683,9 @@ new class extends Component
                                     ) }}
 
                                 @else
-
                                     —
-
                                 @endif
-
                             </span>
-
                         </div>
 
 
@@ -1678,11 +1700,9 @@ new class extends Component
                                     pb-4
                                 "
                             >
-
                                 <span class="text-slate-500">
                                     Countries
                                 </span>
-
 
                                 <div
                                     class="
@@ -1692,7 +1712,6 @@ new class extends Component
                                         gap-1.5
                                     "
                                 >
-
                                     @foreach ($market->countries as $country)
 
                                         <span
@@ -1710,9 +1729,7 @@ new class extends Component
                                         </span>
 
                                     @endforeach
-
                                 </div>
-
                             </div>
 
                         @endif
@@ -1726,7 +1743,6 @@ new class extends Component
                                     justify-between gap-4
                                 "
                             >
-
                                 <span class="text-slate-500">
                                     Published
                                 </span>
@@ -1742,7 +1758,6 @@ new class extends Component
                                         'M j, Y'
                                     ) }}
                                 </span>
-
                             </div>
 
                         @endif
@@ -1752,9 +1767,7 @@ new class extends Component
                 </section>
 
 
-                {{-- =============================================
-                     YOUR BETS
-                ============================================== --}}
+                {{-- YOUR BETS --}}
                 <section
                     class="
                         rounded-2xl
@@ -1770,11 +1783,9 @@ new class extends Component
                             justify-between gap-4
                         "
                     >
-
                         <h2 class="text-lg font-black">
                             Your bets
                         </h2>
-
 
                         @if ($this->myBets->isNotEmpty())
 
@@ -1791,7 +1802,6 @@ new class extends Component
                             </span>
 
                         @endif
-
                     </div>
 
 
@@ -1835,7 +1845,7 @@ new class extends Component
 
 
                                 <div
-                                    wire:key="my-bet-{{ $bet->id }}"
+                                    wire:key="my-bet-{{ $locale }}-{{ $bet->id }}"
                                     class="
                                         rounded-xl
                                         border border-slate-800
@@ -1917,10 +1927,7 @@ new class extends Component
                                                     text-xs
                                                 "
                                             >
-
-                                                <span
-                                                    class="text-slate-500"
-                                                >
+                                                <span class="text-slate-500">
                                                     Profit
                                                 </span>
 
@@ -1935,7 +1942,6 @@ new class extends Component
                                                         2
                                                     ) }}
                                                 </span>
-
                                             </div>
 
 
@@ -1947,10 +1953,7 @@ new class extends Component
                                                     text-xs
                                                 "
                                             >
-
-                                                <span
-                                                    class="text-slate-500"
-                                                >
+                                                <span class="text-slate-500">
                                                     Total payout
                                                 </span>
 
@@ -1965,7 +1968,6 @@ new class extends Component
                                                         2
                                                     ) }}
                                                 </span>
-
                                             </div>
 
                                         </div>
@@ -1995,7 +1997,6 @@ new class extends Component
                                                 pt-3
                                             "
                                         >
-
                                             <div
                                                 class="
                                                     flex items-center
@@ -2003,10 +2004,7 @@ new class extends Component
                                                     text-xs
                                                 "
                                             >
-
-                                                <span
-                                                    class="text-slate-500"
-                                                >
+                                                <span class="text-slate-500">
                                                     Returned
                                                 </span>
 
@@ -2021,9 +2019,7 @@ new class extends Component
                                                         2
                                                     ) }}
                                                 </span>
-
                                             </div>
-
                                         </div>
 
                                     @endif
@@ -2070,7 +2066,6 @@ new class extends Component
             aria-modal="true"
         >
 
-            {{-- BACKDROP --}}
             <button
                 type="button"
                 wire:click="closeBetModal"
@@ -2085,7 +2080,6 @@ new class extends Component
             ></button>
 
 
-            {{-- MODAL --}}
             <div
                 class="
                     relative z-10
@@ -2116,7 +2110,6 @@ new class extends Component
                     >
 
                         <div>
-
                             <div
                                 class="
                                     text-xs font-bold
@@ -2136,7 +2129,6 @@ new class extends Component
                             >
                                 You are placing a bet
                             </h3>
-
                         </div>
 
 
@@ -2178,7 +2170,6 @@ new class extends Component
                         Market
                     </div>
 
-
                     <div
                         class="
                             mt-1 text-base
@@ -2200,7 +2191,6 @@ new class extends Component
                     >
                         Selected outcome
                     </div>
-
 
                     <div
                         class="
@@ -2283,19 +2273,13 @@ new class extends Component
                                 gap-3
                             "
                         >
-
-                            <div
-                                class="text-xs text-slate-500"
-                            >
+                            <div class="text-xs text-slate-500">
                                 Minimum $0.01
                             </div>
 
-                            <div
-                                class="text-xs text-slate-500"
-                            >
+                            <div class="text-xs text-slate-500">
                                 Maximum $10,000.00
                             </div>
-
                         </div>
 
 
