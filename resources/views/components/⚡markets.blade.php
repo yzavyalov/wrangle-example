@@ -543,9 +543,16 @@ new class extends Component
                 @endphp
 
                 <article wire:key="market-{{ $market->public_id }}" class="overflow-hidden rounded-2xl border border-slate-800 bg-[#10243b] shadow-xl shadow-black/10 transition duration-200 hover:-translate-y-0.5 hover:border-slate-700 hover:shadow-2xl hover:shadow-black/20">
-                    <div class="relative min-h-44 overflow-hidden border-b border-slate-800 bg-gradient-to-br from-blue-900 via-[#17436e] to-[#10243b] p-4">
+                    <div class="relative h-44 overflow-hidden border-b border-slate-800 bg-gradient-to-br from-blue-900 via-[#17436e] to-[#10243b] p-4">
                         @if ($market->image_url)
-                            <img src="{{ $market->image_url }}" alt="" loading="lazy" referrerpolicy="no-referrer" class="absolute inset-0 h-full w-full object-cover" onerror="this.style.display='none'">
+                            <img
+                                src="{{ $market->image_url }}"
+                                alt=""
+                                loading="lazy"
+                                referrerpolicy="no-referrer"
+                                class="absolute inset-0 h-full w-full object-contain object-center"
+                                onerror="this.style.display='none'"
+                            >
                             <div class="absolute inset-0 bg-gradient-to-t from-[#06111f]/90 via-[#06111f]/25 to-black/30"></div>
                             <div class="absolute inset-0 bg-gradient-to-r from-black/20 via-transparent to-black/10"></div>
                         @else
