@@ -550,7 +550,8 @@ new class extends Component
                                 alt=""
                                 loading="lazy"
                                 referrerpolicy="no-referrer"
-                                class="absolute inset-0 h-full w-full object-contain object-center"
+                                class="absolute inset-0"
+                                style="width: 100%; height: 100%; object-fit: contain; object-position: center;"
                                 onerror="this.style.display='none'"
                             >
                             <div class="absolute inset-0 bg-gradient-to-t from-[#06111f]/90 via-[#06111f]/25 to-black/30"></div>
